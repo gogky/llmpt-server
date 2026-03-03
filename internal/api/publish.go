@@ -5,12 +5,16 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"regexp"
 	"time"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo/options"
 )
+
+// commitHashRe matches a 40-character lowercase hexadecimal string (Git commit hash).
+var commitHashRe = regexp.MustCompile(`^[0-9a-f]{40}$`)
 
 // PublishRequest 发布模型的请求结构
 type PublishRequest struct {
@@ -41,6 +45,14 @@ func (h *Handler) PublishTorrent(w http.ResponseWriter, r *http.Request) {
 	// 基础校验
 	if req.InfoHash == "" || req.RepoID == "" || req.Revision == "" {
 		ErrorRes(w, http.StatusBadRequest, "info_hash, repo_id, and revision are required")
+		return
+	}
+
+	// Revision 必须是 40 字符的 commit hash，拒绝分支名等非规范化值
+	if !commitHashRe.MatchString(req.Revision) {
+		ErrorRes(w, http.StatusBadRequest,
+			"revision must be a 40-character commit hash (e.g. 'abc123...'), not a branch name like 'main'. "+
+				"Please resolve the revision to a commit hash on the client side before publishing.")
 		return
 	}
 
