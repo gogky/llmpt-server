@@ -10,13 +10,13 @@ import (
 	"syscall"
 	"time"
 
+	"llmpt/internal/api"
 	"llmpt/internal/config"
 	"llmpt/internal/database"
-	"llmpt/internal/tracker"
 )
 
 func main() {
-	fmt.Println("🚀 Starting Tracker Server...")
+	fmt.Println("🚀 Starting Web API Server...")
 
 	// 加载配置
 	cfg, err := config.Load()
@@ -25,31 +25,33 @@ func main() {
 	}
 
 	// 连接数据库
-	ctx := context.Background()
 	db, err := database.New(cfg)
 	if err != nil {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer db.Close()
 
-	fmt.Println("✅ Database connected")
+	fmt.Println("✅ Database connected for Web API")
 
-	// 创建 Tracker 处理器
-	handler := tracker.NewHandler(db, cfg)
-
-	// 启动后台清理任务（时间间隔紧跟 AnnounceInterval 配置）
-	go handler.StartCleanup(ctx, cfg.Server.AnnounceInterval)
+	// 创建 API 处理器
+	handler := api.NewHandler(db, cfg)
 
 	// 设置路由
 	mux := http.NewServeMux()
-	mux.HandleFunc("/announce", handler.Announce)
+
+	// 健康检查
 	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
 	})
 
-	// 创建 HTTP 服务器
-	addr := fmt.Sprintf(":%d", cfg.Server.TrackerPort)
+	// 注册 API 路由
+	handler.RegisterRoutes(mux)
+
+	// 从配置中获取端口
+	port := cfg.Server.Port
+	addr := fmt.Sprintf(":%d", port)
+
 	server := &http.Server{
 		Addr:         addr,
 		Handler:      loggingMiddleware(mux),
@@ -60,10 +62,10 @@ func main() {
 
 	// 启动服务器（非阻塞）
 	go func() {
-		fmt.Printf("🎯 Tracker Server listening on %s\n", addr)
-		fmt.Println("📡 Announce endpoint: http://localhost" + addr + "/announce")
+		fmt.Printf("🎯 Web API Server listening on %s\n", addr)
+		fmt.Printf("📡 API Endpoint Base: http://localhost%s/api/v1\n", addr)
 		if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatalf("Server failed: %v", err)
+			log.Fatalf("Web Server failed: %v", err)
 		}
 	}()
 
@@ -81,22 +83,23 @@ func main() {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
 
-	fmt.Println("✅ Server stopped gracefully")
+	fmt.Println("✅ Web Server stopped gracefully")
 }
 
 // loggingMiddleware 记录所有请求
 func loggingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
+		// 由于 OPTIONS 请求会很多且影响控制台阅读，如果是 OPTIONS 请求可以静默或者降低日志级别
+		if r.Method == "OPTIONS" {
+			next.ServeHTTP(w, r)
+			return
+		}
 
-		// 记录请求
-		log.Printf("%s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
-
-		// 调用下一个处理器
+		log.Printf("[API] %s %s from %s", r.Method, r.URL.Path, r.RemoteAddr)
 		next.ServeHTTP(w, r)
 
-		// 记录耗时
 		duration := time.Since(start)
-		log.Printf("Request completed in %v", duration)
+		log.Printf("[API] Request completed in %v", duration)
 	})
 }
