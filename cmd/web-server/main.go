@@ -40,10 +40,12 @@ func main() {
 	mux := http.NewServeMux()
 
 	// 健康检查
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	healthCheck := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
-	})
+	}
+	mux.HandleFunc("/health", healthCheck)
+	mux.HandleFunc("/api/v1/health", healthCheck)
 
 	// 注册 API 路由
 	handler.RegisterRoutes(mux)

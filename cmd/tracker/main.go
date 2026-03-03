@@ -43,10 +43,12 @@ func main() {
 	// 设置路由
 	mux := http.NewServeMux()
 	mux.HandleFunc("/announce", handler.Announce)
-	mux.HandleFunc("/health", func(w http.ResponseWriter, r *http.Request) {
+	healthCheck := func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("OK"))
-	})
+	}
+	mux.HandleFunc("/health", healthCheck)
+	mux.HandleFunc("/api/v1/health", healthCheck)
 
 	// 创建 HTTP 服务器
 	addr := fmt.Sprintf(":%d", cfg.Server.TrackerPort)
