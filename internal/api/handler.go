@@ -43,6 +43,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 // RegisterRoutes 注册所有的 API 路由
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/torrents", corsMiddleware(h.ListTorrents))
+	mux.HandleFunc("GET /api/v1/torrents/torrent", corsMiddleware(h.DownloadTorrent))
 	mux.HandleFunc("POST /api/v1/publish", corsMiddleware(h.PublishTorrent))
 }
 

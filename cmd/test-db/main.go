@@ -44,7 +44,7 @@ func testMongoDB(db *database.DB) {
 		InfoHash:    "1234567890abcdef1234567890abcdef12345678",
 		TotalSize:   15000000000, // 15GB
 		FileCount:   120,
-		MagnetLink:  "magnet:?xt=urn:btih:1234567890abcdef1234567890abcdef12345678",
+		TorrentData: []byte("fake-torrent-data"),
 		PieceLength: 8388608, // 8MB
 		CreatedAt:   time.Now(),
 	}

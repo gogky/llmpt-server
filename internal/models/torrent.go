@@ -16,9 +16,16 @@ type Torrent struct {
 	InfoHash    string             `bson:"info_hash" json:"info_hash"`       // 种子唯一指纹
 	TotalSize   int64              `bson:"total_size" json:"total_size"`     // 总大小（字节）
 	FileCount   int                `bson:"file_count" json:"file_count"`     // 文件数量
-	MagnetLink  string             `bson:"magnet_link" json:"magnet_link"`   // 磁力链接
+	TorrentData []byte             `bson:"torrent_data" json:"-"`            // 完整 .torrent 文件（二进制，不在列表 API 中返回）
 	PieceLength int64              `bson:"piece_length" json:"piece_length"` // 分片大小
+	Files       []TorrentFile      `bson:"files" json:"files"`               // 文件列表
 	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`     // 创建时间
+}
+
+// TorrentFile 表示 torrent 中的单个文件信息
+type TorrentFile struct {
+	Path string `bson:"path" json:"path"` // 文件相对路径
+	Size int64  `bson:"size" json:"size"` // 文件大小（字节）
 }
 
 // TorrentStats Tracker 统计信息（从 Redis 获取）
