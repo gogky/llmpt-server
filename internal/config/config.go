@@ -2,9 +2,12 @@ package config
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/joho/godotenv"
 )
 
 // Config 应用配置
@@ -48,7 +51,14 @@ type ServerConfig struct {
 }
 
 // Load 加载配置（从环境变量）
+// 会自动尝试从项目根目录的 .env 文件加载配置；
+// 如果 .env 不存在则静默忽略，配置仍可通过系统环境变量注入。
 func Load() (*Config, error) {
+	// 尝试加载 .env 文件；文件不存在时不报错（生产环境通常通过系统环境变量注入）
+	if err := godotenv.Load(); err != nil {
+		log.Println("ℹ️  No .env file found, using system environment variables / defaults")
+	}
+
 	config := &Config{
 		MongoDB: MongoDBConfig{
 			URI:             getEnv("MONGODB_URI", "mongodb://admin:admin123@localhost:27017"),
@@ -70,7 +80,7 @@ func Load() (*Config, error) {
 		Server: ServerConfig{
 			Port:                getEnvInt("SERVER_PORT", 8080),
 			TrackerPort:         getEnvInt("TRACKER_PORT", 8081),
-			TrackerURL:          getEnv("TRACKER_URL", "http://localhost:8081/announce"),
+			TrackerURL:          getEnv("TRACKER_URL", "http://localhost/announce"),
 			Environment:         getEnv("ENVIRONMENT", "development"),
 			AnnounceInterval:    getEnvDuration("ANNOUNCE_INTERVAL", 1800*time.Second),
 			AnnounceMinInterval: getEnvDuration("ANNOUNCE_MIN_INTERVAL", 900*time.Second),

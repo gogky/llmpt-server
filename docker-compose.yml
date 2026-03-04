@@ -6,7 +6,7 @@ services:
     container_name: llmpt-mongodb
     restart: unless-stopped
     ports:
-      - "27017:27017"
+      - "127.0.0.1:27017:27017"
     environment:
       MONGO_INITDB_ROOT_USERNAME: admin
       MONGO_INITDB_ROOT_PASSWORD: admin123
@@ -23,7 +23,7 @@ services:
     container_name: llmpt-redis
     restart: unless-stopped
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     volumes:
       - redis_data:/data
     healthcheck:
@@ -40,6 +40,7 @@ services:
       - "80:80"
     volumes:
       - ./deploy/nginx/llmpt.conf:/etc/nginx/conf.d/default.conf
+      - ./frontend/dist:/usr/share/nginx/html:ro
     # 强制在 Linux 宿主机上解析该魔法域名
     extra_hosts:
       - "host.docker.internal:host-gateway"
