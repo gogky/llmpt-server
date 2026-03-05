@@ -155,21 +155,6 @@ onMounted(() => {
   fetchTorrents()
 })
 
-const copyCommand = async (torrent: TorrentWithStats, group: RepoGroup) => {
-  try {
-    let cmd = `llmpt download ${torrent.repo_id}`
-    // If it's NOT the verified main branch, we must append --revision
-    if (torrent.revision !== group.main_revision) {
-      cmd += ` --revision ${torrent.revision}`
-    }
-    await navigator.clipboard.writeText(cmd)
-    // Minimal visual feedback logic could go here
-    alert(`Copied to clipboard:\n${cmd}`)
-  } catch (err) {
-    console.error('Failed to copy text: ', err)
-  }
-}
-
 const toggleFiles = (torrent: TorrentWithStats) => {
   torrent.filesExpanded = !torrent.filesExpanded
 }
@@ -186,17 +171,75 @@ const filteredGroups = computed(() => {
     g.name.toLowerCase().includes(query)
   )
 })
+
+const isDrawerOpen = ref(false)
+const selectedTorrent = ref<TorrentWithStats | null>(null)
+const selectedGroup = ref<RepoGroup | null>(null)
+
+const openDownloadDrawer = (torrent: TorrentWithStats, group: RepoGroup) => {
+  selectedTorrent.value = torrent
+  selectedGroup.value = group
+  isDrawerOpen.value = true
+}
+
+const closeDrawer = () => {
+  isDrawerOpen.value = false
+  setTimeout(() => {
+    selectedTorrent.value = null
+    selectedGroup.value = null
+  }, 300)
+}
+
+const getRepoTypeName = (repoType: string) => {
+  if (repoType === 'dataset') return '数据集'
+  if (repoType === 'space') return '空间'
+  return '模型'
+}
+
+const copiedState = ref<Record<string, boolean>>({})
+
+const doCopy = async (text: string, id: string) => {
+  try {
+    await navigator.clipboard.writeText(text)
+    copiedState.value[id] = true
+    setTimeout(() => {
+      copiedState.value[id] = false
+    }, 2000)
+  } catch (err) {
+    console.error('Failed to copy text: ', err)
+  }
+}
+
+const cliCommand = computed(() => {
+  if (!selectedTorrent.value || !selectedGroup.value) return ''
+  let cmd = `llmpt-cli download ${selectedGroup.value.repo_id}`
+  if (selectedTorrent.value.revision !== selectedGroup.value.main_revision) {
+    cmd += ` --revision ${selectedTorrent.value.revision}`
+  }
+  return cmd
+})
+
+const pyCommand = computed(() => {
+  if (!selectedTorrent.value || !selectedGroup.value) return ''
+  const isDataset = selectedGroup.value.repo_type === 'dataset'
+  let code = `import llmpt\nfrom huggingface_hub import snapshot_download\n\n# 自动使用 P2P 加速下载\nsnapshot_download(\n    repo_id="${selectedGroup.value.repo_id}",\n    revision="${selectedTorrent.value.revision}"`
+  if (isDataset) {
+    code += `,\n    repo_type="dataset"`
+  }
+  code += `\n)`
+  return code
+})
 </script>
 
 <template>
   <div class="models-view">
     <div class="page-header">
       <div>
-        <h1>LLM Weights & Checkpoints</h1>
-        <p class="subtitle">Distributed via optimized P2P tracker network</p>
+        <h1>基于 P2P 网络的大模型下载</h1>
+        <p class="subtitle">通过去中心化技术，更快速、免费地获取 Hugging Face 上的开源模型</p>
       </div>
       
-      <div class="search-box glass-panel">
+      <div class="search-box panel">
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="11" cy="11" r="8"></circle>
           <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
@@ -204,37 +247,37 @@ const filteredGroups = computed(() => {
         <input 
           type="text" 
           v-model="searchQuery" 
-          placeholder="Search models... (e.g. Llama-3)"
+          placeholder="搜索模型... (例如 Llama-3)"
         >
       </div>
     </div>
 
     <!-- Loading State -->
-    <div v-if="loading" class="state-container glass-panel">
+    <div v-if="loading" class="state-container panel">
       <div class="loader"></div>
-      <p>Synchronizing with Tracker node...</p>
+      <p>正在同步网络数据...</p>
     </div>
 
     <!-- Error State -->
-    <div v-else-if="error" class="state-container error-state glass-panel">
+    <div v-else-if="error" class="state-container error-state panel">
       <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--danger)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
         <circle cx="12" cy="12" r="10"></circle>
         <line x1="12" y1="8" x2="12" y2="12"></line>
         <line x1="12" y1="16" x2="12.01" y2="16"></line>
       </svg>
       <p>{{ error }}</p>
-      <button class="btn btn-primary" @click="fetchTorrents" style="margin-top: 1rem;">Retry connection</button>
+      <button class="btn btn-primary" @click="fetchTorrents" style="margin-top: 1rem;">重试连接</button>
     </div>
 
     <!-- Empty State -->
-    <div v-else-if="filteredGroups.length === 0" class="state-container glass-panel">
-      <p v-if="searchQuery">No models found matching "{{ searchQuery }}".</p>
-      <p v-else>No models have been published to this tracker yet.</p>
+    <div v-else-if="filteredGroups.length === 0" class="state-container panel">
+      <p v-if="searchQuery">没有找到与 "{{ searchQuery }}" 相关的模型。</p>
+      <p v-else>当前网络中还没有发布任何模型。</p>
     </div>
 
     <!-- Grouped Repo List -->
     <div v-else class="repo-list">
-      <div v-for="group in filteredGroups" :key="group.repo_id" :class="['repo-card, glass-panel', { 'is-expanded': group.expanded }]">
+      <div v-for="group in filteredGroups" :key="group.repo_id" :class="['repo-card panel', { 'is-expanded': group.expanded }]">
         
         <!-- Repo Header (Click to expand) -->
         <div class="repo-header" @click="toggleGroup(group)">
@@ -246,12 +289,11 @@ const filteredGroups = computed(() => {
             </svg>
             <div class="repo-names">
               <h3>{{ group.repo_id }}</h3>
-              <span class="repo-meta">{{ formatBytes(group.total_size_latest) }} • {{ group.torrents.length }} revision(s)</span>
+              <span class="repo-meta">{{ formatBytes(group.total_size_latest) }} • {{ group.torrents.length }} 个版本</span>
             </div>
           </div>
           <div class="repo-header-right">
-            <!-- Loading indicator for HF status -->
-            <div class="hf-status" v-if="group.resolving_main" title="Checking HuggingFace for latest commit...">
+            <div class="hf-status" v-if="group.resolving_main" title="正在与 HuggingFace 同步最新版本...">
               <div class="pulse-dot"></div>
             </div>
             <div class="chevron">
@@ -268,14 +310,14 @@ const filteredGroups = computed(() => {
             
             <div class="revision-main-info">
               <div class="revision-header">
-                <a :href="'https://huggingface.co/' + group.repo_id + '/commit/' + torrent.revision" target="_blank" class="revision-hash tooltip" title="View commit on HuggingFace">
+                <a :href="'https://huggingface.co/' + group.repo_id + '/commit/' + torrent.revision" target="_blank" class="revision-hash tooltip" title="在 Hugging Face 网站查看此提交记录">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg>
                   {{ torrent.revision.substring(0, 7) }}
                 </a>
                 
-                <span class="badge badge-success hf-verified" v-if="torrent.revision === group.main_revision" title="This revision matches the current official 'main' branch">
+                <span class="badge badge-success hf-verified" v-if="torrent.revision === group.main_revision" title="此版本与 Hugging Face 官方的 main 分支一致">
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-                  HF Sync / main
+                  main
                 </span>
                 <span class="date-label">{{ formatDate(torrent.created_at) }}</span>
               </div>
@@ -299,23 +341,24 @@ const filteredGroups = computed(() => {
                   <polyline points="17 8 12 3 7 8"></polyline>
                   <line x1="12" y1="3" x2="12" y2="15"></line>
                 </svg>
-                <span class="btn-text">{{ torrent.file_count }} Files</span>
+                <span class="btn-text">{{ torrent.file_count }} 个文件</span>
               </button>
               
-              <button class="action-btn primary-outline" @click="copyCommand(torrent, group)" title="Copy CLI Command">
+              <button class="action-btn primary-outline" @click="openDownloadDrawer(torrent, group)" title="配置并下载">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"></path>
-                  <rect x="8" y="8" width="14" height="14" rx="2" ry="2"></rect>
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="7 10 12 15 17 10"></polyline>
+                  <line x1="12" y1="15" x2="12" y2="3"></line>
                 </svg>
-                <span class="btn-text">CLI Download</span>
+                <span class="btn-text">下载{{ getRepoTypeName(group.repo_type) }}</span>
               </button>
             </div>
             
             <!-- Files Drawer -->
             <div class="files-drawer" v-if="torrent.filesExpanded">
               <div class="drawer-header">
-                <h4>Packaged Files</h4>
-                <span>{{ formatBytes(torrent.total_size) }} Total</span>
+                <h4>打包文件列表</h4>
+                <span>共计 {{ formatBytes(torrent.total_size) }}</span>
               </div>
               <ul class="file-list">
                 <li v-for="(file, idx) in torrent.files" :key="idx">
@@ -329,6 +372,60 @@ const filteredGroups = computed(() => {
         
       </div>
     </div>
+
+    <!-- Slide Drawer for Download Instructions -->
+    <div class="drawer-overlay" :class="{ 'is-open': isDrawerOpen }" @click="closeDrawer"></div>
+    <div class="side-drawer panel" :class="{ 'is-open': isDrawerOpen }">
+      <div class="drawer-header-main">
+        <h2>下载指引</h2>
+        <button class="close-btn" @click="closeDrawer">&times;</button>
+      </div>
+      
+      <div class="drawer-content" v-if="selectedTorrent && selectedGroup">
+        <p class="drawer-subtitle">
+          即将通过 P2P 协议为您加速下载 <strong>{{ selectedGroup.repo_id }}</strong>。
+        </p>
+
+        <div class="doc-section">
+          <h3>1. 客户端库安装</h3>
+          <p>请确保您的 Python 环境中已安装轻量级的 <code>llmpt-client</code>（依赖极简）：</p>
+          <div class="code-block">
+            <code>pip install llmpt-client</code>
+            <button @click="doCopy('pip install llmpt-client', 'install')" class="copy-btn" :class="{ 'is-copied': copiedState['install'] }">
+              {{ copiedState['install'] ? '已复制 ✓' : '复制' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="doc-section">
+          <h3>2. 方式一：CLI 命令行 (推荐)</h3>
+          <p>无需修改任何代码，直接通过命令行高效下载文件（支持断点续传）：</p>
+          <div class="code-block">
+            <code>{{ cliCommand }}</code>
+            <button @click="doCopy(cliCommand, 'cli')" class="copy-btn" :class="{ 'is-copied': copiedState['cli'] }">
+              {{ copiedState['cli'] ? '已复制 ✓' : '复制' }}
+            </button>
+          </div>
+        </div>
+
+        <div class="doc-section">
+          <h3>3. 方式二：Python 脚本无缝集成</h3>
+          <p>在现有代码的最上面<strong>增加一行 <code>import llmpt</code></strong>，即可零配置拦截官方 <code>huggingface_hub</code>，自动实施资源 P2P 加速与回退降级：</p>
+          <div class="code-block multi-line">
+            <pre><code>{{ pyCommand }}</code></pre>
+            <button @click="doCopy(pyCommand, 'py')" class="copy-btn" :class="{ 'is-copied': copiedState['py'] }">
+              {{ copiedState['py'] ? '已复制 ✓' : '复制' }}
+            </button>
+          </div>
+          <p class="footnote">注：在环境变量中设置 <code>HF_USE_P2P=1</code> 以默认启用拦截，如果 P2P 失败会自动降维回 Huggingface 官网源。</p>
+        </div>
+
+        <div class="doc-section more-info">
+          <h3>延伸阅读</h3>
+          <p>查阅详细的高级配置（如指定 tracker 端口、静默下载模式等），欢迎访问我们开源客户端 <a href="https://github.com/gogky/llmpt-client" target="_blank">llmpt-client GitHub 库</a> 阅读完整使用文档。</p>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
@@ -337,7 +434,7 @@ const filteredGroups = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: flex-end;
-  margin-bottom: 2.5rem;
+  margin-bottom: 1.5rem;
   flex-wrap: wrap;
   gap: 1rem;
 }
@@ -345,8 +442,8 @@ const filteredGroups = computed(() => {
 .search-box {
   display: flex;
   align-items: center;
-  gap: 0.75rem;
-  padding: 0.75rem 1rem;
+  gap: 0.5rem;
+  padding: 0.4rem 0.8rem;
   min-width: 300px;
 }
 
@@ -354,7 +451,7 @@ const filteredGroups = computed(() => {
   background: transparent;
   border: none;
   color: var(--text-primary);
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   width: 100%;
   outline: none;
 }
@@ -373,7 +470,7 @@ const filteredGroups = computed(() => {
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  min-height: 300px;
+  min-height: 200px;
   text-align: center;
   color: var(--text-secondary);
 }
@@ -397,19 +494,19 @@ const filteredGroups = computed(() => {
 .repo-list {
   display: flex;
   flex-direction: column;
-  gap: 1.25rem;
+  gap: 0.5rem;
 }
 
 .repo-card {
   overflow: hidden;
-  padding: 0; /* Override glass-panel padding to allow full-width headers */
+  padding: 0; /* Override panel padding to allow full-width headers */
   display: flex;
   flex-direction: column;
 }
 
 /* Repo Header */
 .repo-header {
-  padding: 1.25rem 1.5rem;
+  padding: 0.75rem 1rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -418,13 +515,13 @@ const filteredGroups = computed(() => {
 }
 
 .repo-header:hover {
-  background: rgba(255,255,255,0.02);
+  background: var(--surface-hover);
 }
 
 .repo-title {
   display: flex;
   align-items: center;
-  gap: 1.25rem;
+  gap: 0.75rem;
 }
 
 .repo-title svg {
@@ -433,7 +530,7 @@ const filteredGroups = computed(() => {
 }
 
 .repo-names h3 {
-  font-size: 1.2rem;
+  font-size: 1rem;
   font-weight: 600;
   margin: 0;
   color: var(--text-primary);
@@ -441,9 +538,9 @@ const filteredGroups = computed(() => {
 }
 
 .repo-meta {
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   color: var(--text-tertiary);
-  margin-top: 0.2rem;
+  margin-top: 0.1rem;
   display: block;
 }
 
@@ -476,17 +573,17 @@ const filteredGroups = computed(() => {
 /* Revisions Body */
 .repo-body {
   border-top: 1px solid var(--surface-border);
-  background: rgba(0, 0, 0, 0.15); /* Slightly darker inner bg */
+  background: var(--bg-color); /* Contrast inside the card */
 }
 
 .revision-row {
-  padding: 1.25rem 1.5rem;
-  border-bottom: 1px solid rgba(255,255,255,0.03);
+  padding: 0.75rem 1rem;
+  border-bottom: 1px solid var(--surface-border);
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
-  gap: 1rem;
+  gap: 0.75rem;
 }
 
 .revision-row:last-child {
@@ -512,19 +609,19 @@ const filteredGroups = computed(() => {
   gap: 0.35rem;
   font-family: 'ui-monospace', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
   font-size: 0.85rem;
-  background: rgba(255,255,255,0.06);
+  background: var(--surface-hover);
   padding: 0.2rem 0.5rem;
   border-radius: 6px;
   color: var(--text-secondary);
   text-decoration: none;
   transition: all 0.2s ease;
-  border: 1px solid transparent;
+  border: 1px solid var(--surface-border);
 }
 
 .revision-hash:hover {
-  background: rgba(255,255,255,0.1);
+  background: #e5e7eb;
   color: var(--text-primary);
-  border-color: rgba(255,255,255,0.1);
+  border-color: #d1d5db;
 }
 
 .date-label {
@@ -544,8 +641,8 @@ const filteredGroups = computed(() => {
 }
 
 .stats-group .badge {
-  background: rgba(255,255,255,0.05);
-  border: 1px solid rgba(255,255,255,0.05);
+  background: var(--surface-hover);
+  border: 1px solid var(--surface-border);
   color: var(--text-secondary);
 }
 
@@ -567,40 +664,41 @@ const filteredGroups = computed(() => {
   display: inline-flex;
   align-items: center;
   gap: 0.5rem;
-  padding: 0.5rem 0.875rem;
-  background: rgba(255,255,255,0.05);
+  padding: 0.35rem 0.6rem;
+  background: #ffffff;
   border: 1px solid var(--surface-border);
-  border-radius: 6px;
+  border-radius: 4px;
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s ease;
-  font-size: 0.85rem;
+  font-size: 0.75rem;
   font-family: inherit;
+  box-shadow: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
 }
 
 .action-btn:hover {
-  background: rgba(255,255,255,0.1);
+  background: var(--surface-hover);
   color: var(--text-primary);
-  border-color: rgba(255,255,255,0.15);
+  border-color: #d1d5db;
 }
 
 .primary-outline {
-  border-color: rgba(59, 130, 246, 0.4);
-  color: var(--accent-primary);
+  border-color: #fcd34d;
+  background: #fffbeb;
+  color: #b45309;
 }
 
 .primary-outline:hover {
-  background: rgba(59, 130, 246, 0.1);
-  border-color: var(--accent-primary);
-  color: var(--accent-primary);
+  background: #fef3c7;
+  border-color: #f59e0b;
+  color: #92400e;
 }
 
-/* Files Drawer component */
 .files-drawer {
   flex-basis: 100%;
-  margin-top: 1rem;
-  background: rgba(0,0,0,0.25);
-  border-radius: 8px;
+  margin-top: 0.5rem;
+  background: #f9fafb;
+  border-radius: 6px;
   border: 1px solid var(--surface-border);
   overflow: hidden;
   animation: slideDown 0.3s ease-out forwards;
@@ -615,20 +713,20 @@ const filteredGroups = computed(() => {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0.75rem 1.25rem;
-  background: rgba(255,255,255,0.03);
+  padding: 0.5rem 1rem;
+  background: var(--surface-hover);
   border-bottom: 1px solid var(--surface-border);
 }
 
 .drawer-header h4 {
-  font-size: 0.85rem;
+  font-size: 0.8rem;
   font-weight: 500;
   color: var(--text-secondary);
   margin: 0;
 }
 
 .drawer-header span {
-  font-size: 0.8rem;
+  font-size: 0.75rem;
   color: var(--text-tertiary);
   font-family: monospace;
 }
@@ -636,7 +734,7 @@ const filteredGroups = computed(() => {
 .file-list {
   list-style: none;
   margin: 0;
-  padding: 0.5rem 0;
+  padding: 0.25rem 0;
   max-height: 250px;
   overflow-y: auto;
 }
@@ -644,13 +742,13 @@ const filteredGroups = computed(() => {
 .file-list li {
   display: flex;
   justify-content: space-between;
-  padding: 0.35rem 1.25rem;
-  font-size: 0.85rem;
+  padding: 0.25rem 1rem;
+  font-size: 0.8rem;
   font-family: 'ui-monospace', 'SFMono-Regular', Monaco, monospace;
 }
 
 .file-list li:hover {
-  background: rgba(255,255,255,0.02);
+  background: #ffffff;
 }
 
 .file-path {
@@ -662,6 +760,178 @@ const filteredGroups = computed(() => {
 .file-size {
   color: var(--text-tertiary);
   white-space: nowrap;
+}
+
+/* Side Drawer Styles */
+.drawer-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0,0,0,0.4);
+  backdrop-filter: blur(2px);
+  z-index: 100;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.3s ease;
+}
+
+.drawer-overlay.is-open {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.side-drawer {
+  position: fixed;
+  top: 0;
+  right: -550px;
+  bottom: 0;
+  width: 100%;
+  max-width: 500px;
+  background: var(--surface-color);
+  z-index: 101;
+  box-shadow: -4px 0 15px rgba(0,0,0,0.1);
+  transition: right 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  flex-direction: column;
+  border-radius: 0;
+  border-left: 1px solid var(--surface-border);
+}
+
+.side-drawer.is-open {
+  right: 0;
+}
+
+.drawer-header-main {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1.25rem 1.5rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.drawer-header-main h2 {
+  font-size: 1.25rem;
+  font-weight: 600;
+  margin: 0;
+  color: var(--text-primary);
+}
+
+.close-btn {
+  background: none;
+  border: none;
+  font-size: 1.75rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--text-tertiary);
+  transition: color 0.2s;
+}
+
+.close-btn:hover {
+  color: var(--danger);
+}
+
+.drawer-content {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.5rem;
+}
+
+.drawer-subtitle {
+  color: var(--text-secondary);
+  margin-bottom: 2rem;
+  font-size: 0.95rem;
+}
+
+.doc-section {
+  margin-bottom: 2rem;
+}
+
+.doc-section h3 {
+  font-size: 1rem;
+  font-weight: 600;
+  margin-bottom: 0.75rem;
+  color: var(--text-primary);
+}
+
+.doc-section p {
+  font-size: 0.9rem;
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin-bottom: 0.75rem;
+}
+
+.code-block {
+  background: #f8fafc;
+  border: 1px solid var(--surface-border);
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0.75rem;
+}
+
+.code-block code {
+  font-family: 'ui-monospace', 'SFMono-Regular', Menlo, Monaco, Consolas, monospace;
+  font-size: 0.85rem;
+  color: #0f172a;
+  white-space: nowrap;
+  overflow-x: auto;
+}
+
+.code-block.multi-line {
+  align-items: flex-start;
+  padding: 0.75rem;
+}
+
+.code-block.multi-line pre {
+  margin: 0;
+  overflow-x: auto;
+}
+
+.code-block.multi-line code {
+  white-space: pre;
+}
+
+.copy-btn {
+  background: white;
+  border: 1px solid var(--surface-border);
+  border-radius: 4px;
+  padding: 0.25rem 0.5rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  margin-left: 1rem;
+  flex-shrink: 0;
+  transition: all 0.2s;
+  font-weight: 500;
+}
+
+.copy-btn:hover {
+  background: var(--surface-hover);
+  color: var(--text-primary);
+}
+
+.copy-btn.is-copied {
+  color: var(--success);
+  border-color: var(--success);
+  background: #ecfdf5;
+}
+
+.footnote {
+  margin-top: 0.5rem;
+  font-size: 0.8rem !important;
+  color: var(--warning) !important;
+}
+
+.more-info a {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 500;
+}
+.more-info a:hover {
+  text-decoration: underline;
 }
 
 @media (max-width: 768px) {
