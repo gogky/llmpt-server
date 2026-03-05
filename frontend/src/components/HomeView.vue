@@ -222,10 +222,18 @@ const cliCommand = computed(() => {
 const pyCommand = computed(() => {
   if (!selectedTorrent.value || !selectedGroup.value) return ''
   const isDataset = selectedGroup.value.repo_type === 'dataset'
-  let code = `import llmpt\nfrom huggingface_hub import snapshot_download\n\n# 自动使用 P2P 加速下载\nsnapshot_download(\n    repo_id="${selectedGroup.value.repo_id}",\n    revision="${selectedTorrent.value.revision}"`
+  const isMain = selectedTorrent.value.revision === selectedGroup.value.main_revision
+  
+  let code = `import llmpt\nfrom huggingface_hub import snapshot_download\n\n# 显式启用 P2P 并自动拦截下载请求\nllmpt.enable_p2p()\n\nsnapshot_download(\n    repo_id="${selectedGroup.value.repo_id}"`
+  
+  if (!isMain) {
+    code += `,\n    revision="${selectedTorrent.value.revision}"`
+  }
+  
   if (isDataset) {
     code += `,\n    repo_type="dataset"`
   }
+  
   code += `\n)`
   return code
 })
@@ -410,14 +418,13 @@ const pyCommand = computed(() => {
 
         <div class="doc-section">
           <h3>3. 方式二：Python 脚本无缝集成</h3>
-          <p>在现有代码的最上面<strong>增加一行 <code>import llmpt</code></strong>，即可零配置拦截官方 <code>huggingface_hub</code>，自动实施资源 P2P 加速与回退降级：</p>
+          <p>在现有代码的最上面<strong>引入 <code>llmpt</code> 并调用 <code>enable_p2p()</code></strong>，即可零配置拦截官方 <code>huggingface_hub</code>，自动实施资源 P2P 加速（失败时自动降级）：</p>
           <div class="code-block multi-line">
             <pre><code>{{ pyCommand }}</code></pre>
             <button @click="doCopy(pyCommand, 'py')" class="copy-btn" :class="{ 'is-copied': copiedState['py'] }">
               {{ copiedState['py'] ? '已复制 ✓' : '复制' }}
             </button>
           </div>
-          <p class="footnote">注：在环境变量中设置 <code>HF_USE_P2P=1</code> 以默认启用拦截，如果 P2P 失败会自动降维回 Huggingface 官网源。</p>
         </div>
 
         <div class="doc-section more-info">
