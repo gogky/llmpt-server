@@ -78,7 +78,11 @@ func (h *Handler) PublishTorrent(w http.ResponseWriter, r *http.Request) {
 	collection := h.db.MongoDB.TorrentsCollection()
 
 	// 使用 Upsert 逻辑（根据 RepoID 和 Revision 快照进行判断更新）
-	filter := bson.M{"repo_id": req.RepoID, "revision": req.Revision}
+	repoType := req.RepoType
+	if repoType == "" {
+		repoType = "model"
+	}
+	filter := bson.M{"repo_type": repoType, "repo_id": req.RepoID, "revision": req.Revision}
 	update := bson.M{
 		"$set": bson.M{
 			"repo_type":    req.RepoType,

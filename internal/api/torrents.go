@@ -25,6 +25,10 @@ func (h *Handler) ListTorrents(w http.ResponseWriter, r *http.Request) {
 	if revision != "" {
 		filter["revision"] = revision
 	}
+	repoType := r.URL.Query().Get("repo_type")
+	if repoType != "" {
+		filter["repo_type"] = repoType
+	}
 
 	// 1. 从 MongoDB 提取列表
 	findOptions := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}})

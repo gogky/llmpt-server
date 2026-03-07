@@ -66,10 +66,17 @@ const formatDate = (dateStr: string) => {
 }
 
 // Fetch main branch SHA from HuggingFace with fallback to HF-Mirror
-const resolveMainBranch = async (repo_id: string): Promise<string | null> => {
+const resolveMainBranch = async (repo_id: string, repo_type: string): Promise<string | null> => {
+  let endpoint_type = 'models'
+  if (repo_type === 'dataset') {
+    endpoint_type = 'datasets'
+  } else if (repo_type === 'space') {
+    endpoint_type = 'spaces'
+  }
+
   const endpoints = [
-    `https://huggingface.co/api/models/${repo_id}`,
-    `https://hf-mirror.com/api/models/${repo_id}`
+    `https://huggingface.co/api/${endpoint_type}/${repo_id}`,
+    `https://hf-mirror.com/api/${endpoint_type}/${repo_id}`
   ]
 
   for (const endpoint of endpoints) {
@@ -139,7 +146,7 @@ const fetchTorrents = async () => {
     
     // Asynchronously resolve main branch for each group
     groupsArray.forEach(async (group) => {
-      group.main_revision = await resolveMainBranch(group.repo_id)
+      group.main_revision = await resolveMainBranch(group.repo_id, group.repo_type)
       group.resolving_main = false
     })
 
@@ -194,6 +201,12 @@ const getRepoTypeName = (repoType: string) => {
   if (repoType === 'dataset') return '数据集'
   if (repoType === 'space') return '空间'
   return '模型'
+}
+
+const getRepoUrlPrefix = (repoType: string) => {
+  if (repoType === 'dataset') return 'https://huggingface.co/datasets/'
+  if (repoType === 'space') return 'https://huggingface.co/spaces/'
+  return 'https://huggingface.co/'
 }
 
 const copiedState = ref<Record<string, boolean>>({})
@@ -318,7 +331,7 @@ const pyCommand = computed(() => {
             
             <div class="revision-main-info">
               <div class="revision-header">
-                <a :href="'https://huggingface.co/' + group.repo_id + '/commit/' + torrent.revision" target="_blank" class="revision-hash tooltip" title="在 Hugging Face 网站查看此提交记录">
+                <a :href="getRepoUrlPrefix(group.repo_type) + group.repo_id + '/commit/' + torrent.revision" target="_blank" class="revision-hash tooltip" title="在 Hugging Face 网站查看此提交记录">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="18" cy="18" r="3"></circle><circle cx="6" cy="6" r="3"></circle><path d="M13 6h3a2 2 0 0 1 2 2v7"></path><line x1="6" y1="9" x2="6" y2="21"></line></svg>
                   {{ torrent.revision.substring(0, 7) }}
                 </a>
