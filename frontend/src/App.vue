@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import HomeView from './components/HomeView.vue'
+// Using vue-router for navigation
 </script>
 
 <template>
@@ -12,12 +12,13 @@ import HomeView from './components/HomeView.vue'
         <span>HF-P2P</span>
       </div>
       <nav>
-        <a href="#" class="active">模型库</a>
+        <router-link to="/" active-class="active">模型库</router-link>
+        <router-link to="/admin" active-class="active">管理后台</router-link>
       </nav>
     </header>
 
     <main>
-      <HomeView />
+      <router-view></router-view>
     </main>
   </div>
 </template>

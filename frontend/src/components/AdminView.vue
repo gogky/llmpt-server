@@ -1,0 +1,443 @@
+<script setup lang="ts">
+import { ref, onMounted } from 'vue'
+
+const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8080'
+
+interface TorrentData {
+  id: string;
+  repo_id: string;
+  revision: string;
+  info_hash: string;
+  total_size: number;
+  file_count: number;
+  status: string;
+  created_at: string;
+}
+
+const torrents = ref<TorrentData[]>([])
+const loading = ref(false)
+const error = ref<string | null>(null)
+
+const isAuthenticated = ref(false)
+const adminToken = ref('')
+
+onMounted(() => {
+  const savedToken = localStorage.getItem('adminToken')
+  if (savedToken) {
+    adminToken.value = savedToken
+    isAuthenticated.value = true
+    loadTorrents()
+  }
+})
+
+const login = () => {
+  if (adminToken.value.trim()) {
+    localStorage.setItem('adminToken', adminToken.value.trim())
+    isAuthenticated.value = true
+    loadTorrents()
+  }
+}
+
+const logout = () => {
+  localStorage.removeItem('adminToken')
+  adminToken.value = ''
+  isAuthenticated.value = false
+  torrents.value = []
+}
+
+const loadTorrents = async () => {
+  if (!isAuthenticated.value) return
+  
+  loading.value = true
+  error.value = null
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/admin/torrents`, {
+      headers: {
+        'Authorization': `Bearer ${adminToken.value}`
+      }
+    })
+    
+    if (res.status === 401 || res.status === 403) {
+      logout()
+      error.value = '授权失败，请重新登录'
+      return
+    }
+    
+    if (!res.ok) throw new Error('加载失败')
+    
+    const json = await res.json()
+    torrents.value = json.data || []
+  } catch (err: any) {
+    error.value = err.message || '网络连接错误'
+  } finally {
+    loading.value = false
+  }
+}
+
+const approveTorrent = async (id: string) => {
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/admin/torrents/${id}/approve`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${adminToken.value}`
+      }
+    })
+    
+    if (!res.ok) {
+      const e = await res.json()
+      alert('审批失败: ' + (e.error || res.statusText))
+      return
+    }
+    
+    alert('已通过')
+    loadTorrents()
+  } catch(e) {
+    alert('请求错误')
+  }
+}
+
+const deleteTorrent = async (id: string) => {
+  if (!confirm('确定要彻底删除该种子的所有数据和 Tracker 记录吗？')) return
+  
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/admin/torrents/${id}`, {
+      method: 'DELETE',
+      headers: {
+        'Authorization': `Bearer ${adminToken.value}`
+      }
+    })
+    
+    if (!res.ok) {
+      const e = await res.json()
+      alert('删除失败: ' + (e.error || res.statusText))
+      return
+    }
+    
+    alert('已删除')
+    loadTorrents()
+  } catch(e) {
+    alert('请求错误')
+  }
+}
+
+const formatBytes = (bytes: number) => {
+  if (bytes === 0) return '0 B'
+  const k = 1024
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
+  const i = Math.floor(Math.log(bytes) / Math.log(k))
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+}
+
+const formatDate = (dateString: string) => {
+  return new Date(dateString).toLocaleString()
+}
+</script>
+
+<template>
+  <div class="admin-container">
+    <div class="admin-header">
+      <h2>管理后台</h2>
+      <button v-if="isAuthenticated" @click="logout" class="action-btn delete-btn">退出登录</button>
+    </div>
+
+    <!-- Login Form -->
+    <div v-if="!isAuthenticated" class="login-card panel">
+      <h3>小站管理登录</h3>
+      <div class="input-group">
+        <label>Admin Token</label>
+        <input type="password" v-model="adminToken" @keyup.enter="login" placeholder="请输入超级管理员 Token..." />
+      </div>
+      <button class="primary-btn" @click="login">登录</button>
+    </div>
+
+    <!-- Admin Panel -->
+    <div v-else class="admin-panel">
+      <div class="table-actions">
+        <button class="action-btn" @click="loadTorrents">🔄 刷新列表</button>
+      </div>
+      
+      <div v-if="error" class="error-msg">
+        {{ error }}
+      </div>
+      
+      <div v-else-if="loading" class="loading-state">
+        <div class="loader"></div>
+        <p>加载中...</p>
+      </div>
+      
+      <div v-else class="table-container panel">
+        <table class="data-table">
+          <thead>
+            <tr>
+              <th>仓库 (Repo ID)</th>
+              <th>Revision</th>
+              <th>大小</th>
+              <th>文件数</th>
+              <th>状态</th>
+              <th>时间</th>
+              <th>操作</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr v-if="torrents.length === 0">
+              <td colspan="7" class="empty-state">暂无数据</td>
+            </tr>
+            <tr v-for="t in torrents" :key="t.id">
+              <td><span class="repo-id">{{ t.repo_id }}</span></td>
+              <td><span class="revision-badge">{{ t.revision.substring(0, 7) }}</span></td>
+              <td>{{ formatBytes(t.total_size) }}</td>
+              <td>{{ t.file_count }}</td>
+              <td>
+                <span class="status-badge" :class="t.status">{{ t.status === 'pending' ? '待审核' : '生效中' }}</span>
+              </td>
+              <td>{{ formatDate(t.created_at) }}</td>
+              <td class="row-actions">
+                <button v-if="t.status === 'pending'" @click="approveTorrent(t.id)" class="action-btn primary-btn sm">
+                  通过
+                </button>
+                <button @click="deleteTorrent(t.id)" class="action-btn delete-btn sm">
+                  删除
+                </button>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.admin-container {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.admin-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 2rem;
+}
+
+.admin-header h2 {
+  font-size: 1.5rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  margin: 0;
+}
+
+.panel {
+  background: var(--surface-card);
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  padding: 2rem;
+}
+
+/* Login */
+.login-card {
+  max-width: 400px;
+  margin: 4rem auto;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.login-card h3 {
+  margin: 0;
+  text-align: center;
+}
+
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.input-group label {
+  font-size: 0.875rem;
+  color: var(--text-secondary);
+}
+
+.input-group input {
+  padding: 0.75rem 1rem;
+  background: var(--surface-bg);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  color: var(--text-primary);
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.2s;
+}
+
+.input-group input:focus {
+  border-color: var(--accent-primary);
+}
+
+.primary-btn {
+  background: var(--accent-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: opacity 0.2s;
+}
+
+.primary-btn:hover {
+  opacity: 0.9;
+}
+
+.primary-btn.sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.action-btn {
+  background: var(--surface-bg);
+  color: var(--text-primary);
+  border: 1px solid var(--surface-border);
+  border-radius: 8px;
+  padding: 0.75rem 1.5rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.action-btn:hover {
+  background: var(--surface-border);
+}
+
+.action-btn.sm {
+  padding: 0.5rem 1rem;
+  font-size: 0.875rem;
+}
+
+.delete-btn {
+  color: #ef4444;
+  border-color: #fca5a5;
+  background: transparent;
+}
+.delete-btn:hover {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.table-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-bottom: 1rem;
+}
+
+.table-container {
+  padding: 0;
+  overflow: hidden;
+}
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+}
+
+.data-table th, .data-table td {
+  padding: 1rem 1.5rem;
+  border-bottom: 1px solid var(--surface-border);
+  font-size: 0.9rem;
+}
+
+.data-table th {
+  background: var(--surface-bg);
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+
+.data-table tr:last-child td {
+  border-bottom: none;
+}
+
+.repo-id {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  font-weight: 500;
+}
+
+.revision-badge {
+  font-family: var(--font-mono);
+  background: var(--surface-bg);
+  padding: 0.25rem 0.5rem;
+  border-radius: 4px;
+  border: 1px solid var(--surface-border);
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+}
+
+.status-badge {
+  display: inline-block;
+  padding: 0.25rem 0.75rem;
+  border-radius: 99px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-badge.active {
+  background: rgba(16, 185, 129, 0.1);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.2);
+}
+
+.status-badge.pending {
+  background: rgba(245, 158, 11, 0.1);
+  color: #f59e0b;
+  border: 1px solid rgba(245, 158, 11, 0.2);
+}
+
+.row-actions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.error-msg {
+  padding: 1rem;
+  background: #fee2e2;
+  color: #b91c1c;
+  border-radius: 8px;
+  text-align: center;
+}
+
+.empty-state {
+  text-align: center;
+  color: var(--text-secondary);
+  padding: 3rem !important;
+}
+
+.loading-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  padding: 4rem;
+  color: var(--text-secondary);
+}
+
+.loader {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--surface-border);
+  border-top-color: var(--accent-primary);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-color-scheme: dark) {
+  .delete-btn:hover {
+    background: rgba(239, 68, 68, 0.1);
+  }
+}
+</style>
