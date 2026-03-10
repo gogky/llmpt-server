@@ -19,6 +19,7 @@ type Torrent struct {
 	TorrentData []byte             `bson:"torrent_data" json:"-"`            // 完整 .torrent 文件（二进制，不在列表 API 中返回）
 	PieceLength int64              `bson:"piece_length" json:"piece_length"` // 分片大小
 	Files       []TorrentFile      `bson:"files" json:"files"`               // 文件列表
+	Status      string             `bson:"status" json:"status"`             // 状态 (如: "active", "pending")
 	CreatedAt   time.Time          `bson:"created_at" json:"created_at"`     // 创建时间
 }
 

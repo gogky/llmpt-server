@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"log"
 	"net/http"
+	"strings"
 
 	"llmpt/internal/config"
 	"llmpt/internal/database"
@@ -45,6 +46,18 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/torrents", corsMiddleware(h.ListTorrents))
 	mux.HandleFunc("GET /api/v1/torrents/torrent", corsMiddleware(h.DownloadTorrent))
 	mux.HandleFunc("POST /api/v1/publish", corsMiddleware(h.PublishTorrent))
+
+	// Admin API 路由
+	// Node: r.URL.Path logic inside requires specific paths or standard trailing slash handling
+	mux.HandleFunc("GET /api/v1/admin/torrents", corsMiddleware(adminAuthMiddleware(h.AdminListTorrents)))
+	mux.HandleFunc("POST /api/v1/admin/torrents/", corsMiddleware(adminAuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/approve") {
+			h.AdminApproveTorrent(w, r)
+		} else {
+			ErrorRes(w, http.StatusNotFound, "admin route not found")
+		}
+	})))
+	mux.HandleFunc("DELETE /api/v1/admin/torrents/", corsMiddleware(adminAuthMiddleware(h.AdminDeleteTorrent)))
 }
 
 // JSONRes 返回 JSON 响应

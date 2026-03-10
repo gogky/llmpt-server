@@ -16,7 +16,12 @@ func (h *Handler) ListTorrents(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	collection := h.db.MongoDB.TorrentsCollection()
 
-	filter := bson.M{}
+	filter := bson.M{
+		"$or": []bson.M{
+			{"status": "active"},
+			{"status": bson.M{"$exists": false}}, // Backward compatibility
+		},
+	}
 	repoID := r.URL.Query().Get("repo_id")
 	if repoID != "" {
 		filter["repo_id"] = repoID
