@@ -98,8 +98,12 @@ func (h *Handler) PublishTorrent(w http.ResponseWriter, r *http.Request) {
 	defer cancel()
 
 	collection := h.db.MongoDB.TorrentsCollection()
+	if req.RepoType == "" {
+		req.RepoType = "model"
+	}
+
 	var existing models.Torrent
-	err = collection.FindOne(ctx, bson.M{"repo_id": req.RepoID, "revision": req.Revision}).Decode(&existing)
+	err = collection.FindOne(ctx, bson.M{"repo_type": req.RepoType, "repo_id": req.RepoID, "revision": req.Revision}).Decode(&existing)
 	if err == nil {
 		// Found existing
 		if existing.InfoHash != meta.InfoHash {

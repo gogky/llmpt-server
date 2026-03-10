@@ -114,9 +114,9 @@ func (m *MongoDB) CreateIndexes(ctx context.Context) error {
 		Options: options.Index().SetUnique(true),
 	}
 
-	// 创建 repo_id + revision 联合唯一索引 (保证快照唯一)
+	// 创建 repo_type + repo_id + revision 联合唯一索引 (保证快照唯一)
 	repoRevisionIndex := mongo.IndexModel{
-		Keys:    bson.D{{Key: "repo_id", Value: 1}, {Key: "revision", Value: 1}},
+		Keys:    bson.D{{Key: "repo_type", Value: 1}, {Key: "repo_id", Value: 1}, {Key: "revision", Value: 1}},
 		Options: options.Index().SetUnique(true),
 	}
 

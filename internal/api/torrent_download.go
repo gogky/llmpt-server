@@ -24,7 +24,11 @@ func (h *Handler) DownloadTorrent(w http.ResponseWriter, r *http.Request) {
 	ctx := r.Context()
 	collection := h.db.MongoDB.TorrentsCollection()
 
-	filter := bson.M{"repo_id": repoID, "revision": revision}
+	repoType := r.URL.Query().Get("repo_type")
+	if repoType == "" {
+		repoType = "model"
+	}
+	filter := bson.M{"repo_type": repoType, "repo_id": repoID, "revision": revision}
 	// Only project the torrent_data field to avoid loading the entire document
 	opts := options.FindOne().SetProjection(bson.M{"torrent_data": 1})
 
