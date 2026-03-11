@@ -93,6 +93,12 @@ func (h *Handler) PublishTorrent(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// 校验种子根目录名是否为 commit hash
+	if meta.Name != req.Revision {
+		ErrorRes(w, http.StatusBadRequest, "torrent name (root directory) must match the revision commit hash exactly")
+		return
+	}
+
 	// 2. 检查唯一的 InfoHash，同一 revision 不允许出现不同 content
 	ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 	defer cancel()

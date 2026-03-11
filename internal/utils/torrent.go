@@ -12,6 +12,7 @@ import (
 // TorrentMeta is a simplified structure to parse torrent data and calculate hashes
 type TorrentMeta struct {
 	InfoHash    string
+	Name        string
 	PieceLength int64
 	TotalSize   int64
 	FileCount   int
@@ -59,6 +60,7 @@ func ParseTorrent(torrentData []byte) (*TorrentMeta, error) {
 
 	res := &TorrentMeta{
 		InfoHash:    infoHash,
+		Name:        infoDict.Name,
 		PieceLength: infoDict.PieceLength,
 		Files:       make([]FileInfo, 0),
 	}
