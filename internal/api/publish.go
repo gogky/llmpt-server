@@ -28,6 +28,7 @@ type PublishRequest struct {
 	RepoType    string               `json:"repo_type"`
 	Name        string               `json:"name"`
 	InfoHash    string               `json:"info_hash"`
+	AnnounceKey string               `json:"announce_key,omitempty"`
 	TotalSize   int64                `json:"total_size"`
 	FileCount   int                  `json:"file_count"`
 	TorrentData string               `json:"torrent_data"` // base64-encoded .torrent file
@@ -85,6 +86,14 @@ func (h *Handler) PublishTorrent(w http.ResponseWriter, r *http.Request) {
 		ErrorRes(w, http.StatusBadRequest, "info_hash mismatch: client provided "+req.InfoHash+" but we calculated "+meta.InfoHash)
 		return
 	}
+	if req.AnnounceKey != "" && meta.AnnounceKey != req.AnnounceKey {
+		ErrorRes(
+			w,
+			http.StatusBadRequest,
+			"announce_key mismatch: client provided "+req.AnnounceKey+" but we calculated "+meta.AnnounceKey,
+		)
+		return
+	}
 
 	// 校验切片大小是否符合规范
 	expectedPieceLength := utils.GetOptimalPieceLength(meta.TotalSize)
@@ -116,10 +125,15 @@ func (h *Handler) PublishTorrent(w http.ResponseWriter, r *http.Request) {
 			ErrorRes(w, http.StatusConflict, "A different torrent info_hash already exists for this revision")
 			return
 		}
+		if existing.AnnounceKey != "" && existing.AnnounceKey != meta.AnnounceKey {
+			ErrorRes(w, http.StatusConflict, "A different announce_key already exists for this revision")
+			return
+		}
 		// Idempotent success
 		JSONRes(w, http.StatusOK, map[string]string{
-			"message":   "torrent metadata already exists",
-			"info_hash": req.InfoHash,
+			"message":      "torrent metadata already exists",
+			"info_hash":    req.InfoHash,
+			"announce_key": meta.AnnounceKey,
 		})
 		return
 	} else if err != mongo.ErrNoDocuments {
@@ -171,6 +185,7 @@ func (h *Handler) PublishTorrent(w http.ResponseWriter, r *http.Request) {
 		RepoType:    req.RepoType,
 		Name:        req.Name,
 		InfoHash:    meta.InfoHash,
+		AnnounceKey: meta.AnnounceKey,
 		TotalSize:   meta.TotalSize,
 		FileCount:   meta.FileCount,
 		TorrentData: torrentBytes,
@@ -193,8 +208,9 @@ func (h *Handler) PublishTorrent(w http.ResponseWriter, r *http.Request) {
 	}
 
 	JSONRes(w, http.StatusOK, map[string]string{
-		"message":   msg,
-		"info_hash": req.InfoHash,
-		"status":    finalStatus,
+		"message":      msg,
+		"info_hash":    req.InfoHash,
+		"announce_key": meta.AnnounceKey,
+		"status":       finalStatus,
 	})
 }

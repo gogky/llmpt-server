@@ -114,6 +114,13 @@ func (m *MongoDB) CreateIndexes(ctx context.Context) error {
 		Options: options.Index().SetUnique(true),
 	}
 
+	// tracker announce 仍使用 20-byte truncated swarm key。为其建立独立索引，
+	// 并用 sparse 避免旧文档缺少 announce_key 时冲突。
+	announceKeyIndex := mongo.IndexModel{
+		Keys:    bson.M{"announce_key": 1},
+		Options: options.Index().SetUnique(true).SetSparse(true),
+	}
+
 	// 创建 repo_type + repo_id + revision 联合唯一索引 (保证快照唯一)
 	repoRevisionIndex := mongo.IndexModel{
 		Keys:    bson.D{{Key: "repo_type", Value: 1}, {Key: "repo_id", Value: 1}, {Key: "revision", Value: 1}},
@@ -130,7 +137,7 @@ func (m *MongoDB) CreateIndexes(ctx context.Context) error {
 		Keys: bson.M{"repo_id": "text"},
 	}
 
-	indexes := []mongo.IndexModel{infoHashIndex, repoRevisionIndex, createdAtIndex, repoIdIndex}
+	indexes := []mongo.IndexModel{infoHashIndex, announceKeyIndex, repoRevisionIndex, createdAtIndex, repoIdIndex}
 
 	_, err := torrents.Indexes().CreateMany(ctx, indexes)
 	if err != nil {

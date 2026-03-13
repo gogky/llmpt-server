@@ -55,15 +55,20 @@ func (h *Handler) ListTorrents(w http.ResponseWriter, r *http.Request) {
 	// 2. 对于每个 Torrent，从 Redis 拿最新统计数据
 	var results []models.TorrentWithStats
 	for _, t := range torrents {
+		swarmKey := t.AnnounceKey
+		if swarmKey == "" {
+			swarmKey = t.InfoHash
+		}
+
 		// 这里通过 GetPeerCount 获取最新当前值
-		seeders, leechers, err := h.db.Redis.GetPeerCount(ctx, t.InfoHash)
+		seeders, leechers, err := h.db.Redis.GetPeerCount(ctx, swarmKey)
 		if err != nil {
-			log.Printf("Failed to get peer count for %s: %v", t.InfoHash, err)
+			log.Printf("Failed to get peer count for %s: %v", swarmKey, err)
 			continue
 		}
 
 		// 获取总下载完成数
-		statsStrMap, _ := h.db.Redis.GetStats(ctx, t.InfoHash)
+		statsStrMap, _ := h.db.Redis.GetStats(ctx, swarmKey)
 		var completed int64
 		if val, ok := statsStrMap["completed"]; ok && val != "" {
 			parsed, err := strconv.ParseInt(val, 10, 64)

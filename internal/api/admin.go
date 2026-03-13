@@ -169,11 +169,17 @@ func (h *Handler) AdminDeleteTorrent(w http.ResponseWriter, r *http.Request) {
 
 	// Optinal: Delete peer dicts from Redis tracker
 	// (This cleans up the Tracker's memory for this swarm entirely)
+	swarmKey := torrent.AnnounceKey
+	if swarmKey == "" {
+		swarmKey = torrent.InfoHash
+	}
 	deleteKeys := []string{
-		"swarm:" + torrent.InfoHash,
-		"stats:" + torrent.InfoHash,
+		"tracker:seeders:" + swarmKey,
+		"tracker:leechers:" + swarmKey,
+		"tracker:stats:" + swarmKey,
 	}
 	h.db.Redis.Client.Del(ctx, deleteKeys...)
+	h.db.Redis.Client.SRem(ctx, "tracker:active_torrents", swarmKey)
 
 	JSONRes(w, http.StatusOK, map[string]string{"message": "torrent and tracker info deleted successfully"})
 }
