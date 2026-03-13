@@ -10,6 +10,7 @@ interface TorrentStats {
 interface TorrentFile {
   path: string
   size: number
+  file_root?: string
 }
 
 interface Torrent {
@@ -63,6 +64,12 @@ const formatBytes = (bytes: number, decimals = 2) => {
 const formatDate = (dateStr: string) => {
   const date = new Date(dateStr)
   return new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric', year: 'numeric' }).format(date)
+}
+
+const shortHash = (value?: string) => {
+  if (!value) return ''
+  if (value.length <= 16) return value
+  return `${value.slice(0, 8)}...${value.slice(-6)}`
 }
 
 // Fetch main branch SHA from HuggingFace with fallback to HF-Mirror
@@ -383,7 +390,12 @@ const pyCommand = computed(() => {
               </div>
               <ul class="file-list">
                 <li v-for="(file, idx) in torrent.files" :key="idx">
-                  <span class="file-path">{{ file.path }}</span>
+                  <div class="file-main">
+                    <span class="file-path">{{ file.path }}</span>
+                    <span v-if="file.file_root" class="file-root" :title="file.file_root">
+                      root {{ shortHash(file.file_root) }}
+                    </span>
+                  </div>
                   <span class="file-size">{{ formatBytes(file.size) }}</span>
                 </li>
               </ul>
@@ -762,6 +774,7 @@ const pyCommand = computed(() => {
 .file-list li {
   display: flex;
   justify-content: space-between;
+  align-items: flex-start;
   padding: 0.25rem 1rem;
   font-size: 0.8rem;
   font-family: 'ui-monospace', 'SFMono-Regular', Monaco, monospace;
@@ -771,10 +784,22 @@ const pyCommand = computed(() => {
   background: #ffffff;
 }
 
+.file-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .file-path {
   color: var(--text-primary);
   word-break: break-all;
   padding-right: 1rem;
+}
+
+.file-root {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
 }
 
 .file-size {

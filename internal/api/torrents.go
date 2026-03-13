@@ -6,6 +6,7 @@ import (
 	"strconv"
 
 	"llmpt/internal/models"
+	"llmpt/internal/utils"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -55,6 +56,24 @@ func (h *Handler) ListTorrents(w http.ResponseWriter, r *http.Request) {
 	// 2. 对于每个 Torrent，从 Redis 拿最新统计数据
 	var results []models.TorrentWithStats
 	for _, t := range torrents {
+		if len(t.TorrentData) > 0 && len(t.Files) > 0 {
+			meta, err := utils.ParseTorrent(t.TorrentData)
+			if err != nil {
+				log.Printf("Failed to parse torrent_data for %s: %v", t.InfoHash, err)
+			} else {
+				parsedByPath := make(map[string]utils.FileInfo, len(meta.Files))
+				for _, file := range meta.Files {
+					parsedByPath[file.Path] = file
+				}
+				for i := range t.Files {
+					parsed, ok := parsedByPath[t.Files[i].Path]
+					if ok && parsed.Size == t.Files[i].Size {
+						t.Files[i].FileRoot = parsed.FileRoot
+					}
+				}
+			}
+		}
+
 		swarmKey := t.AnnounceKey
 		if swarmKey == "" {
 			swarmKey = t.InfoHash

@@ -24,8 +24,9 @@ type TorrentMeta struct {
 }
 
 type FileInfo struct {
-	Path string
-	Size int64
+	Path     string
+	Size     int64
+	FileRoot string
 }
 
 // ParseTorrent extracts metadata from raw .torrent bytes
@@ -136,14 +137,19 @@ func parseV2FileTreeNode(path []string, raw bencode.RawMessage, files *[]FileInf
 
 	if leafRaw, ok := node[""]; ok {
 		var props struct {
-			Length int64 `bencode:"length"`
+			Length     int64  `bencode:"length"`
+			PiecesRoot []byte `bencode:"pieces root"`
 		}
 		if err := bencode.DecodeBytes(leafRaw, &props); err != nil {
 			return fmt.Errorf("failed to decode v2 file node %q: %w", strings.Join(path, "/"), err)
 		}
 		pathStr := strings.Join(path, "/")
 		if !isPaddingPath(pathStr) {
-			*files = append(*files, FileInfo{Path: pathStr, Size: props.Length})
+			file := FileInfo{Path: pathStr, Size: props.Length}
+			if len(props.PiecesRoot) > 0 {
+				file.FileRoot = hex.EncodeToString(props.PiecesRoot)
+			}
+			*files = append(*files, file)
 		}
 		return nil
 	}

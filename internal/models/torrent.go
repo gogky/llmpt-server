@@ -26,8 +26,9 @@ type Torrent struct {
 
 // TorrentFile 表示 torrent 中的单个文件信息
 type TorrentFile struct {
-	Path string `bson:"path" json:"path"` // 文件相对路径
-	Size int64  `bson:"size" json:"size"` // 文件大小（字节）
+	Path     string `bson:"path" json:"path"`                               // 文件相对路径
+	Size     int64  `bson:"size" json:"size"`                               // 文件大小（字节）
+	FileRoot string `bson:"file_root,omitempty" json:"file_root,omitempty"` // v2 per-file root（按需解析时可返回）
 }
 
 // TorrentStats Tracker 统计信息（从 Redis 获取）
