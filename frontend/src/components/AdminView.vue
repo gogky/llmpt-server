@@ -204,6 +204,16 @@ const formatPeerEndpoint = (peer: TorrentPeer) => {
   if (peer.port > 0) return `${peer.ip}:${peer.port}`
   return peer.ip
 }
+
+const getPeerPayload = (id: string) => peerDetails.value[id] ?? null
+
+const getSeederCount = (id: string) => getPeerPayload(id)?.seeder_count ?? 0
+
+const getLeecherCount = (id: string) => getPeerPayload(id)?.leecher_count ?? 0
+
+const getSeederPeers = (id: string) => getPeerPayload(id)?.seeders ?? []
+
+const getLeecherPeers = (id: string) => getPeerPayload(id)?.leechers ?? []
 </script>
 
 <template>
@@ -286,13 +296,13 @@ const formatPeerEndpoint = (peer: TorrentPeer) => {
                       <div class="peer-group">
                         <div class="peer-group-header">
                           <h4>Seeders</h4>
-                          <span>{{ peerDetails[t.id].seeder_count }}</span>
+                          <span>{{ getSeederCount(t.id) }}</span>
                         </div>
-                        <div v-if="peerDetails[t.id].seeders.length === 0" class="peer-empty">
+                        <div v-if="getSeederPeers(t.id).length === 0" class="peer-empty">
                           当前没有 Seeder
                         </div>
                         <ul v-else class="peer-list">
-                          <li v-for="peer in peerDetails[t.id].seeders" :key="`seeder-${peer.address}`" class="peer-item">
+                          <li v-for="peer in getSeederPeers(t.id)" :key="`seeder-${peer.address}`" class="peer-item">
                             <div class="peer-main">{{ peer.ip }}</div>
                             <div class="peer-meta">
                               <span>{{ formatPeerEndpoint(peer) }}</span>
@@ -305,13 +315,13 @@ const formatPeerEndpoint = (peer: TorrentPeer) => {
                       <div class="peer-group">
                         <div class="peer-group-header">
                           <h4>Leechers</h4>
-                          <span>{{ peerDetails[t.id].leecher_count }}</span>
+                          <span>{{ getLeecherCount(t.id) }}</span>
                         </div>
-                        <div v-if="peerDetails[t.id].leechers.length === 0" class="peer-empty">
+                        <div v-if="getLeecherPeers(t.id).length === 0" class="peer-empty">
                           当前没有 Leecher
                         </div>
                         <ul v-else class="peer-list">
-                          <li v-for="peer in peerDetails[t.id].leechers" :key="`leecher-${peer.address}`" class="peer-item">
+                          <li v-for="peer in getLeecherPeers(t.id)" :key="`leecher-${peer.address}`" class="peer-item">
                             <div class="peer-main">{{ peer.ip }}</div>
                             <div class="peer-meta">
                               <span>{{ formatPeerEndpoint(peer) }}</span>
