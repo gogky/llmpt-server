@@ -2,10 +2,14 @@ package api
 
 import (
 	"log"
+	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
+	"time"
 
+	"llmpt/internal/database"
 	"llmpt/internal/models"
 
 	"go.mongodb.org/mongo-driver/bson"
@@ -83,6 +87,100 @@ func (h *Handler) AdminListTorrents(w http.ResponseWriter, r *http.Request) {
 		"total": len(torrents),
 		"data":  torrents,
 	})
+}
+
+type adminPeerView struct {
+	IP       string    `json:"ip"`
+	Port     int       `json:"port"`
+	Address  string    `json:"address"`
+	LastSeen time.Time `json:"last_seen"`
+}
+
+// AdminGetTorrentPeers 获取指定种子当前 swarm 下的 peer 列表 (GET /api/v1/admin/torrents/:id/peers)
+func (h *Handler) AdminGetTorrentPeers(w http.ResponseWriter, r *http.Request) {
+	if r.Method != "GET" {
+		ErrorRes(w, http.StatusMethodNotAllowed, "method not allowed")
+		return
+	}
+
+	parts := strings.Split(r.URL.Path, "/")
+	if len(parts) < 7 {
+		ErrorRes(w, http.StatusBadRequest, "invalid url path")
+		return
+	}
+	idStr := parts[5]
+
+	objID, err := primitive.ObjectIDFromHex(idStr)
+	if err != nil {
+		ErrorRes(w, http.StatusBadRequest, "invalid torrent id")
+		return
+	}
+
+	ctx := r.Context()
+	collection := h.db.MongoDB.TorrentsCollection()
+
+	var torrent models.Torrent
+	if err := collection.FindOne(ctx, bson.M{"_id": objID}).Decode(&torrent); err != nil {
+		ErrorRes(w, http.StatusNotFound, "torrent not found")
+		return
+	}
+
+	swarmKey := torrent.AnnounceKey
+	if swarmKey == "" {
+		swarmKey = torrent.InfoHash
+	}
+
+	seeders, leechers, err := h.db.Redis.GetSwarmPeers(ctx, swarmKey)
+	if err != nil {
+		log.Printf("Failed to get peers for torrent %s: %v", idStr, err)
+		ErrorRes(w, http.StatusInternalServerError, "failed to fetch peers")
+		return
+	}
+
+	JSONRes(w, http.StatusOK, map[string]interface{}{
+		"torrent_id":    torrent.ID.Hex(),
+		"repo_id":       torrent.RepoID,
+		"revision":      torrent.Revision,
+		"swarm_key":     swarmKey,
+		"seeder_count":  len(seeders),
+		"leecher_count": len(leechers),
+		"seeders":       buildAdminPeerViews(seeders),
+		"leechers":      buildAdminPeerViews(leechers),
+	})
+}
+
+func buildAdminPeerViews(peers []database.PeerMember) []adminPeerView {
+	if len(peers) == 0 {
+		return []adminPeerView{}
+	}
+
+	result := make([]adminPeerView, 0, len(peers))
+	for _, peer := range peers {
+		view := adminPeerView{
+			IP:       peer.Address,
+			Address:  peer.Address,
+			LastSeen: peer.LastSeen,
+		}
+
+		host, portStr, err := net.SplitHostPort(peer.Address)
+		if err == nil {
+			port := portFromString(portStr)
+			view.IP = host
+			view.Port = port
+		}
+
+		result = append(result, view)
+	}
+
+	return result
+}
+
+func portFromString(portStr string) int {
+	port, err := strconv.Atoi(portStr)
+	if err != nil {
+		return 0
+	}
+	return port
 }
 
 // AdminApproveTorrent 审核通过种子 (POST /api/v1/admin/torrents/:id/approve)

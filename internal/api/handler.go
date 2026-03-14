@@ -50,6 +50,13 @@ func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	// Admin API 路由
 	// Node: r.URL.Path logic inside requires specific paths or standard trailing slash handling
 	mux.HandleFunc("GET /api/v1/admin/torrents", corsMiddleware(adminAuthMiddleware(h.AdminListTorrents)))
+	mux.HandleFunc("GET /api/v1/admin/torrents/", corsMiddleware(adminAuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
+		if strings.HasSuffix(r.URL.Path, "/peers") {
+			h.AdminGetTorrentPeers(w, r)
+		} else {
+			ErrorRes(w, http.StatusNotFound, "admin route not found")
+		}
+	})))
 	mux.HandleFunc("POST /api/v1/admin/torrents/", corsMiddleware(adminAuthMiddleware(func(w http.ResponseWriter, r *http.Request) {
 		if strings.HasSuffix(r.URL.Path, "/approve") {
 			h.AdminApproveTorrent(w, r)

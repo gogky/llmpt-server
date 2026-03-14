@@ -13,6 +13,12 @@ type Redis struct {
 	Client *redis.Client
 }
 
+// PeerMember 表示 Redis 中保存的单个 Peer 及其最近心跳时间。
+type PeerMember struct {
+	Address  string
+	LastSeen time.Time
+}
+
 // RedisPoolOptions Redis 连接池配置
 type RedisPoolOptions struct {
 	PoolSize     int
@@ -187,6 +193,50 @@ func (r *Redis) GetPeerCount(ctx context.Context, infoHash string) (seeders, lee
 	}
 
 	return sCmd.Val(), lCmd.Val(), nil
+}
+
+// GetSwarmPeers 返回指定 swarm 当前的所有 Seeders 和 Leechers，按最近活跃时间倒序排列。
+func (r *Redis) GetSwarmPeers(ctx context.Context, infoHash string) (seeders, leechers []PeerMember, err error) {
+	seederKey := fmt.Sprintf("tracker:seeders:%s", infoHash)
+	leecherKey := fmt.Sprintf("tracker:leechers:%s", infoHash)
+
+	pipe := r.Client.Pipeline()
+	seederCmd := pipe.ZRevRangeWithScores(ctx, seederKey, 0, -1)
+	leecherCmd := pipe.ZRevRangeWithScores(ctx, leecherKey, 0, -1)
+
+	if _, err = pipe.Exec(ctx); err != nil {
+		return nil, nil, err
+	}
+
+	seeders = zMembersToPeerMembers(seederCmd.Val())
+	leechers = zMembersToPeerMembers(leecherCmd.Val())
+
+	return seeders, leechers, nil
+}
+
+func zMembersToPeerMembers(zs []redis.Z) []PeerMember {
+	if len(zs) == 0 {
+		return []PeerMember{}
+	}
+
+	peers := make([]PeerMember, 0, len(zs))
+	for _, z := range zs {
+		address, ok := z.Member.(string)
+		if !ok || address == "" {
+			continue
+		}
+
+		peers = append(peers, PeerMember{
+			Address:  address,
+			LastSeen: time.Unix(int64(z.Score), 0).UTC(),
+		})
+	}
+
+	if peers == nil {
+		return []PeerMember{}
+	}
+
+	return peers
 }
 
 // CleanExpiredPeers 清理全局所有的超时节点

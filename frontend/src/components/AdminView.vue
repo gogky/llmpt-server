@@ -14,9 +14,31 @@ interface TorrentData {
   created_at: string;
 }
 
+interface TorrentPeer {
+  ip: string;
+  port: number;
+  address: string;
+  last_seen: string;
+}
+
+interface TorrentPeersPayload {
+  torrent_id: string;
+  repo_id: string;
+  revision: string;
+  swarm_key: string;
+  seeder_count: number;
+  leecher_count: number;
+  seeders: TorrentPeer[];
+  leechers: TorrentPeer[];
+}
+
 const torrents = ref<TorrentData[]>([])
 const loading = ref(false)
 const error = ref<string | null>(null)
+const expandedPeerPanels = ref<Record<string, boolean>>({})
+const loadingPeers = ref<Record<string, boolean>>({})
+const peerErrors = ref<Record<string, string | null>>({})
+const peerDetails = ref<Record<string, TorrentPeersPayload>>({})
 
 const isAuthenticated = ref(false)
 const adminToken = ref('')
@@ -43,7 +65,15 @@ const logout = () => {
   adminToken.value = ''
   isAuthenticated.value = false
   torrents.value = []
+  expandedPeerPanels.value = {}
+  loadingPeers.value = {}
+  peerErrors.value = {}
+  peerDetails.value = {}
 }
+
+const getAuthHeaders = () => ({
+  'Authorization': `Bearer ${adminToken.value}`
+})
 
 const loadTorrents = async () => {
   if (!isAuthenticated.value) return
@@ -52,9 +82,7 @@ const loadTorrents = async () => {
   error.value = null
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/admin/torrents`, {
-      headers: {
-        'Authorization': `Bearer ${adminToken.value}`
-      }
+      headers: getAuthHeaders()
     })
     
     if (res.status === 401 || res.status === 403) {
@@ -78,9 +106,7 @@ const approveTorrent = async (id: string) => {
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/admin/torrents/${id}/approve`, {
       method: 'POST',
-      headers: {
-        'Authorization': `Bearer ${adminToken.value}`
-      }
+      headers: getAuthHeaders()
     })
     
     if (!res.ok) {
@@ -102,9 +128,7 @@ const deleteTorrent = async (id: string) => {
   try {
     const res = await fetch(`${API_BASE_URL}/api/v1/admin/torrents/${id}`, {
       method: 'DELETE',
-      headers: {
-        'Authorization': `Bearer ${adminToken.value}`
-      }
+      headers: getAuthHeaders()
     })
     
     if (!res.ok) {
@@ -114,9 +138,52 @@ const deleteTorrent = async (id: string) => {
     }
     
     alert('已删除')
+    delete expandedPeerPanels.value[id]
+    delete loadingPeers.value[id]
+    delete peerErrors.value[id]
+    delete peerDetails.value[id]
     loadTorrents()
   } catch(e) {
     alert('请求错误')
+  }
+}
+
+const togglePeers = async (id: string) => {
+  const isOpen = expandedPeerPanels.value[id]
+  expandedPeerPanels.value[id] = !isOpen
+
+  if (!isOpen && !peerDetails.value[id] && !loadingPeers.value[id]) {
+    await loadPeers(id)
+  }
+}
+
+const loadPeers = async (id: string) => {
+  loadingPeers.value[id] = true
+  peerErrors.value[id] = null
+
+  try {
+    const res = await fetch(`${API_BASE_URL}/api/v1/admin/torrents/${id}/peers`, {
+      headers: getAuthHeaders()
+    })
+
+    if (res.status === 401 || res.status === 403) {
+      logout()
+      error.value = '授权失败，请重新登录'
+      return
+    }
+
+    if (!res.ok) {
+      const payload = await res.json().catch(() => null)
+      throw new Error(payload?.error || 'Peer 列表加载失败')
+    }
+
+    const json = await res.json()
+    peerDetails.value[id] = json as TorrentPeersPayload
+  } catch (err: unknown) {
+    const message = err instanceof Error ? err.message : 'Peer 列表加载失败'
+    peerErrors.value[id] = message
+  } finally {
+    loadingPeers.value[id] = false
   }
 }
 
@@ -130,6 +197,12 @@ const formatBytes = (bytes: number) => {
 
 const formatDate = (dateString: string) => {
   return new Date(dateString).toLocaleString()
+}
+
+const formatPeerEndpoint = (peer: TorrentPeer) => {
+  if (peer.address) return peer.address
+  if (peer.port > 0) return `${peer.ip}:${peer.port}`
+  return peer.ip
 }
 </script>
 
@@ -182,24 +255,76 @@ const formatDate = (dateString: string) => {
             <tr v-if="torrents.length === 0">
               <td colspan="7" class="empty-state">暂无数据</td>
             </tr>
-            <tr v-for="t in torrents" :key="t.id">
-              <td><span class="repo-id">{{ t.repo_id }}</span></td>
-              <td><span class="revision-badge">{{ t.revision.substring(0, 7) }}</span></td>
-              <td>{{ formatBytes(t.total_size) }}</td>
-              <td>{{ t.file_count }}</td>
-              <td>
-                <span class="status-badge" :class="t.status">{{ t.status === 'pending' ? '待审核' : '生效中' }}</span>
-              </td>
-              <td>{{ formatDate(t.created_at) }}</td>
-              <td class="row-actions">
-                <button v-if="t.status === 'pending'" @click="approveTorrent(t.id)" class="action-btn primary-btn sm">
-                  通过
-                </button>
-                <button @click="deleteTorrent(t.id)" class="action-btn delete-btn sm">
-                  删除
-                </button>
-              </td>
-            </tr>
+            <template v-for="t in torrents" :key="t.id">
+              <tr>
+                <td><span class="repo-id">{{ t.repo_id }}</span></td>
+                <td><span class="revision-badge">{{ t.revision.substring(0, 7) }}</span></td>
+                <td>{{ formatBytes(t.total_size) }}</td>
+                <td>{{ t.file_count }}</td>
+                <td>
+                  <span class="status-badge" :class="t.status">{{ t.status === 'pending' ? '待审核' : '生效中' }}</span>
+                </td>
+                <td>{{ formatDate(t.created_at) }}</td>
+                <td class="row-actions">
+                  <button @click="togglePeers(t.id)" class="action-btn sm">
+                    {{ expandedPeerPanels[t.id] ? '收起 Peer' : '查看 Peer IP' }}
+                  </button>
+                  <button v-if="t.status === 'pending'" @click="approveTorrent(t.id)" class="action-btn primary-btn sm">
+                    通过
+                  </button>
+                  <button @click="deleteTorrent(t.id)" class="action-btn delete-btn sm">
+                    删除
+                  </button>
+                </td>
+              </tr>
+              <tr v-if="expandedPeerPanels[t.id]" class="peer-row">
+                <td colspan="7" class="peer-panel-cell">
+                  <div class="peer-panel">
+                    <div v-if="loadingPeers[t.id]" class="peer-status">正在加载 Peer 列表...</div>
+                    <div v-else-if="peerErrors[t.id]" class="peer-status peer-error">{{ peerErrors[t.id] }}</div>
+                    <div v-else-if="peerDetails[t.id]" class="peer-groups">
+                      <div class="peer-group">
+                        <div class="peer-group-header">
+                          <h4>Seeders</h4>
+                          <span>{{ peerDetails[t.id].seeder_count }}</span>
+                        </div>
+                        <div v-if="peerDetails[t.id].seeders.length === 0" class="peer-empty">
+                          当前没有 Seeder
+                        </div>
+                        <ul v-else class="peer-list">
+                          <li v-for="peer in peerDetails[t.id].seeders" :key="`seeder-${peer.address}`" class="peer-item">
+                            <div class="peer-main">{{ peer.ip }}</div>
+                            <div class="peer-meta">
+                              <span>{{ formatPeerEndpoint(peer) }}</span>
+                              <span>最近心跳：{{ formatDate(peer.last_seen) }}</span>
+                            </div>
+                          </li>
+                        </ul>
+                      </div>
+
+                      <div class="peer-group">
+                        <div class="peer-group-header">
+                          <h4>Leechers</h4>
+                          <span>{{ peerDetails[t.id].leecher_count }}</span>
+                        </div>
+                        <div v-if="peerDetails[t.id].leechers.length === 0" class="peer-empty">
+                          当前没有 Leecher
+                        </div>
+                        <ul v-else class="peer-list">
+                          <li v-for="peer in peerDetails[t.id].leechers" :key="`leecher-${peer.address}`" class="peer-item">
+                            <div class="peer-main">{{ peer.ip }}</div>
+                            <div class="peer-meta">
+                              <span>{{ formatPeerEndpoint(peer) }}</span>
+                              <span>最近心跳：{{ formatDate(peer.last_seen) }}</span>
+                            </div>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            </template>
           </tbody>
         </table>
       </div>
@@ -396,7 +521,94 @@ const formatDate = (dateString: string) => {
 
 .row-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
+}
+
+.peer-row td {
+  background: color-mix(in srgb, var(--surface-bg) 70%, transparent);
+}
+
+.peer-panel-cell {
+  padding: 0 !important;
+}
+
+.peer-panel {
+  padding: 1.25rem 1.5rem 1.5rem;
+}
+
+.peer-status {
+  color: var(--text-secondary);
+}
+
+.peer-error {
+  color: #b91c1c;
+}
+
+.peer-groups {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+}
+
+.peer-group {
+  border: 1px solid var(--surface-border);
+  border-radius: 12px;
+  background: var(--surface-card);
+  overflow: hidden;
+}
+
+.peer-group-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 1rem 1rem 0.75rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.peer-group-header h4 {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.peer-group-header span {
+  font-family: var(--font-mono);
+  color: var(--text-secondary);
+}
+
+.peer-empty {
+  padding: 1rem;
+  color: var(--text-secondary);
+}
+
+.peer-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.peer-item {
+  padding: 0.875rem 1rem;
+  border-bottom: 1px solid var(--surface-border);
+}
+
+.peer-item:last-child {
+  border-bottom: none;
+}
+
+.peer-main {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.peer-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 0.4rem;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
 }
 
 .error-msg {
@@ -438,6 +650,12 @@ const formatDate = (dateString: string) => {
 @media (prefers-color-scheme: dark) {
   .delete-btn:hover {
     background: rgba(239, 68, 68, 0.1);
+  }
+}
+
+@media (max-width: 900px) {
+  .peer-groups {
+    grid-template-columns: 1fr;
   }
 }
 </style>
