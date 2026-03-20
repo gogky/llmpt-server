@@ -137,7 +137,25 @@ func (m *MongoDB) CreateIndexes(ctx context.Context) error {
 		Keys: bson.M{"repo_id": "text"},
 	}
 
-	indexes := []mongo.IndexModel{infoHashIndex, announceKeyIndex, repoRevisionIndex, createdAtIndex, repoIdIndex}
+	// 创建 repo_type + repo_id + files.file_root + files.size 组合索引，
+	// 用于“同仓库不同 revision”的单文件来源查询。
+	fileRootLookupIndex := mongo.IndexModel{
+		Keys: bson.D{
+			{Key: "repo_type", Value: 1},
+			{Key: "repo_id", Value: 1},
+			{Key: "files.file_root", Value: 1},
+			{Key: "files.size", Value: 1},
+		},
+	}
+
+	indexes := []mongo.IndexModel{
+		infoHashIndex,
+		announceKeyIndex,
+		repoRevisionIndex,
+		createdAtIndex,
+		repoIdIndex,
+		fileRootLookupIndex,
+	}
 
 	_, err := torrents.Indexes().CreateMany(ctx, indexes)
 	if err != nil {

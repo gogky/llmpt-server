@@ -173,8 +173,9 @@ func (h *Handler) PublishTorrent(w http.ResponseWriter, r *http.Request) {
 	dbFiles := make([]models.TorrentFile, 0, len(meta.Files))
 	for _, f := range meta.Files {
 		dbFiles = append(dbFiles, models.TorrentFile{
-			Path: f.Path,
-			Size: f.Size,
+			Path:     f.Path,
+			Size:     f.Size,
+			FileRoot: f.FileRoot,
 		})
 	}
 

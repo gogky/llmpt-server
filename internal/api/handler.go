@@ -45,6 +45,7 @@ func corsMiddleware(next http.HandlerFunc) http.HandlerFunc {
 func (h *Handler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/torrents", corsMiddleware(h.ListTorrents))
 	mux.HandleFunc("GET /api/v1/torrents/torrent", corsMiddleware(h.DownloadTorrent))
+	mux.HandleFunc("GET /api/v1/file-sources", corsMiddleware(h.GetFileSources))
 	mux.HandleFunc("POST /api/v1/publish", corsMiddleware(h.PublishTorrent))
 
 	// Admin API 路由
