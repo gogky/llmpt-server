@@ -6,7 +6,6 @@ import (
 	"strconv"
 
 	"llmpt/internal/models"
-	"llmpt/internal/utils"
 
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo/options"
@@ -18,10 +17,7 @@ func (h *Handler) ListTorrents(w http.ResponseWriter, r *http.Request) {
 	collection := h.db.MongoDB.TorrentsCollection()
 
 	filter := bson.M{
-		"$or": []bson.M{
-			{"status": "active"},
-			{"status": bson.M{"$exists": false}}, // Backward compatibility
-		},
+		"$or": activeTorrentFilter()["$or"],
 	}
 	repoID := r.URL.Query().Get("repo_id")
 	if repoID != "" {
@@ -56,38 +52,20 @@ func (h *Handler) ListTorrents(w http.ResponseWriter, r *http.Request) {
 	// 2. 对于每个 Torrent，从 Redis 拿最新统计数据
 	var results []models.TorrentWithStats
 	for _, t := range torrents {
-		if len(t.TorrentData) > 0 && len(t.Files) > 0 {
-			meta, err := utils.ParseTorrent(t.TorrentData)
-			if err != nil {
-				log.Printf("Failed to parse torrent_data for %s: %v", t.InfoHash, err)
-			} else {
-				parsedByPath := make(map[string]utils.FileInfo, len(meta.Files))
-				for _, file := range meta.Files {
-					parsedByPath[file.Path] = file
-				}
-				for i := range t.Files {
-					parsed, ok := parsedByPath[t.Files[i].Path]
-					if ok && parsed.Size == t.Files[i].Size {
-						t.Files[i].FileRoot = parsed.FileRoot
-					}
-				}
-			}
+		if changed, err := hydrateTorrentFileRoots(&t); err != nil {
+			log.Printf("Failed to parse torrent_data for %s: %v", t.InfoHash, err)
+		} else if changed {
+			h.persistTorrentFiles(ctx, t)
 		}
 
-		swarmKey := t.AnnounceKey
-		if swarmKey == "" {
-			swarmKey = t.InfoHash
-		}
-
-		// 这里通过 GetPeerCount 获取最新当前值
-		seeders, leechers, err := h.db.Redis.GetPeerCount(ctx, swarmKey)
+		seeders, leechers, err := h.db.Redis.GetPeerCount(ctx, swarmKeyForTorrent(t))
 		if err != nil {
-			log.Printf("Failed to get peer count for %s: %v", swarmKey, err)
+			log.Printf("Failed to get peer count for %s: %v", swarmKeyForTorrent(t), err)
 			continue
 		}
 
 		// 获取总下载完成数
-		statsStrMap, _ := h.db.Redis.GetStats(ctx, swarmKey)
+		statsStrMap, _ := h.db.Redis.GetStats(ctx, swarmKeyForTorrent(t))
 		var completed int64
 		if val, ok := statsStrMap["completed"]; ok && val != "" {
 			parsed, err := strconv.ParseInt(val, 10, 64)
